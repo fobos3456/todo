@@ -1,4 +1,5 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../models/app_language.dart';
 import '../models/chat_message.dart';
 import '../models/medical_guide.dart';
@@ -8,6 +9,17 @@ class CuraeProvider extends ChangeNotifier {
   bool _isTutorTyping = false;
   MedicalCategory _selectedCategory = MedicalCategory.all;
   String _searchQuery = "";
+  List<MedicalGuide> _guides = MedicalGuide.sampleGuides;
+
+  FirebaseFirestore? _firestoreInstance;
+  FirebaseFirestore? get _firestore {
+    try {
+      _firestoreInstance ??= FirebaseFirestore.instance;
+      return _firestoreInstance;
+    } catch (_) {
+      return null;
+    }
+  }
 
   final List<ChatMessage> _messages = [
     ChatMessage(
@@ -24,6 +36,10 @@ class CuraeProvider extends ChangeNotifier {
     )
   ];
 
+  CuraeProvider() {
+    _initFirebaseConnection();
+  }
+
   AppLanguage get language => _language;
   AppStrings get strings => _language == AppLanguage.es ? stringsEs : stringsEn;
   List<ChatMessage> get messages => List.unmodifiable(_messages);
@@ -32,7 +48,7 @@ class CuraeProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
 
   List<MedicalGuide> get filteredGuides {
-    return MedicalGuide.sampleGuides.where((guide) {
+    return _guides.where((guide) {
       final matchesCategory = _selectedCategory == MedicalCategory.all || guide.category == _selectedCategory;
       final query = _searchQuery.trim().toLowerCase();
       if (query.isEmpty) return matchesCategory;
@@ -41,6 +57,42 @@ class CuraeProvider extends ChangeNotifier {
       final summary = _language == AppLanguage.es ? guide.summaryEs : guide.summaryEn;
       return matchesCategory && (title.toLowerCase().contains(query) || summary.toLowerCase().contains(query));
     }).toList();
+  }
+
+  void _initFirebaseConnection() async {
+    try {
+      final db = _firestore;
+      if (db == null) return;
+
+      // 1. Cargar e inicializar base de datos de Guías Médicas en Cloud Firestore
+      final guidesRef = db.collection('medical_guides');
+      final snapshot = await guidesRef.get();
+
+      if (snapshot.docs.isEmpty) {
+        // Inicializar/Poblar base de datos en Firebase si la colección está vacía
+        for (final guide in MedicalGuide.sampleGuides) {
+          await guidesRef.doc(guide.id).set(guide.toMap());
+        }
+      } else {
+        _guides = snapshot.docs
+            .map((doc) => MedicalGuide.fromMap(doc.data(), doc.id))
+            .toList();
+        notifyListeners();
+      }
+
+      // 2. Escuchar cambios en tiempo real del chat en Firestore
+      db.collection('messages').orderBy('timestamp', descending: false).snapshots().listen((chatSnapshot) {
+        if (chatSnapshot.docs.isNotEmpty) {
+          _messages.clear();
+          for (final doc in chatSnapshot.docs) {
+            _messages.add(ChatMessage.fromMap(doc.data(), doc.id));
+          }
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint("Info: Usando almacenamiento local/fallback sin conexión Firebase: $e");
+    }
   }
 
   void toggleLanguage() {
@@ -62,13 +114,20 @@ class CuraeProvider extends ChangeNotifier {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    _messages.add(ChatMessage(
+    final userMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       sender: MessageSender.user,
       text: trimmed,
-    ));
+    );
+
+    _messages.add(userMsg);
     _isTutorTyping = true;
     notifyListeners();
+
+    // Guardar mensaje del usuario en Firestore si está disponible
+    try {
+      await _firestore?.collection('messages').doc(userMsg.id).set(userMsg.toMap());
+    } catch (_) {}
 
     // Simulación de interacción con el backend Python o servicio de Firebase AI
     await Future.delayed(const Duration(milliseconds: 1500));
@@ -86,7 +145,7 @@ class CuraeProvider extends ChangeNotifier {
             "3. Observe how your symptoms evolve over the next hours.\n\n"
             "⚠️ Consult a healthcare provider if symptoms persist more than 48 hours or if you develop severe pain or high fever.";
 
-    _messages.add(ChatMessage(
+    final tutorMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       sender: MessageSender.tutor,
       text: responseText,
@@ -95,9 +154,15 @@ class CuraeProvider extends ChangeNotifier {
         strings.whenToSeeDoctor,
         strings.preventCare,
       ],
-    ));
+    );
 
+    _messages.add(tutorMsg);
     _isTutorTyping = false;
     notifyListeners();
+
+    // Guardar respuesta del Tutor en Firestore si está disponible
+    try {
+      await _firestore?.collection('messages').doc(tutorMsg.id).set(tutorMsg.toMap());
+    } catch (_) {}
   }
 }

@@ -1,10 +1,18 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/curae_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Info Firebase Init: $e");
+  }
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => CuraeProvider(),

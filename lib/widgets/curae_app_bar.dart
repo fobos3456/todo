@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import '../models/app_language.dart';
 
 class CuraeAppBar extends StatelessWidget implements PreferredSizeWidget {

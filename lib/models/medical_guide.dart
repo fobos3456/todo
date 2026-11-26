@@ -27,6 +27,41 @@ class MedicalGuide {
     this.warningEn,
   });
 
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'category': category.name,
+      'iconEmoji': iconEmoji,
+      'titleEs': titleEs,
+      'titleEn': titleEn,
+      'summaryEs': summaryEs,
+      'summaryEn': summaryEn,
+      'stepsEs': stepsEs,
+      'stepsEn': stepsEn,
+      'warningEs': warningEs,
+      'warningEn': warningEn,
+    };
+  }
+
+  factory MedicalGuide.fromMap(Map<String, dynamic> map, String docId) {
+    return MedicalGuide(
+      id: docId.isNotEmpty ? docId : (map['id'] ?? ''),
+      category: MedicalCategory.values.firstWhere(
+        (e) => e.name == map['category'],
+        orElse: () => MedicalCategory.all,
+      ),
+      iconEmoji: map['iconEmoji'] ?? '🩺',
+      titleEs: map['titleEs'] ?? '',
+      titleEn: map['titleEn'] ?? '',
+      summaryEs: map['summaryEs'] ?? '',
+      summaryEn: map['summaryEn'] ?? '',
+      stepsEs: List<String>.from(map['stepsEs'] ?? []),
+      stepsEn: List<String>.from(map['stepsEn'] ?? []),
+      warningEs: map['warningEs'],
+      warningEn: map['warningEn'],
+    );
+  }
+
   static const List<MedicalGuide> sampleGuides = [
     MedicalGuide(
       id: "fa_choking",
