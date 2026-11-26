@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Compilar e Instalar curae",
+      "type": "shell",
+      "windows": {
+        "command": ".\\gradlew.bat installDebug"
+      },
+      "linux": {
+        "command": "./gradlew installDebug"
+      },
+      "osx": {
+        "command": "./gradlew installDebug"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "2. Abrir curae en Emulador",
+      "type": "shell",
+      "windows": {
+        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\" shell am start -n com.example.prototipo/.MainActivity"
+      },
+      "linux": {
+        "command": "adb shell am start -n com.example.prototipo/.MainActivity"
+      },
+      "dependsOn": ["1. Compilar e Instalar curae"],
+      "problemMatcher": []
+    },
+    {
+      "label": "3. Ver Logs (Logcat)",
+      "type": "shell",
+      "windows": {
+        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\" logcat -v time -s curae:* AndroidRuntime:E"
+      },
+      "linux": {
+        "command": "adb logcat -v time -s curae:* AndroidRuntime:E"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "4. Listar Dispositivos / Emuladores",
+      "type": "shell",
+      "windows": {
+        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\" devices"
+      },
+      "linux": {
+        "command": "adb devices"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
