@@ -24,7 +24,7 @@
 
 # 
 
-# 📋 Descripción General
+# Descripción General
 
 # 
 
@@ -74,13 +74,13 @@
 
 # flowchart LR
 
-# &#x20;   U\[👤 Usuario] <-->|1. Consulta / Lectura| A\[📱 App Android - curae]
+# &#x20;   U\[Usuario] <-->|1. Consulta / Lectura| A\[App Android - curae]
 
-# &#x20;   A <-->|2. Caché Offline| L\[(🗄️ Repositorio Local)]
+# &#x20;   A <-->|2. Caché Offline| L\[(Repositorio Local)]
 
-# &#x20;   A <-->|3. Petición HTTP| B\[🐍 Backend Python + SQLite]
+# &#x20;   A <-->|3. Petición HTTP| B\[Backend Python + SQLite]
 
-# &#x20;   B <-->|4. Contexto + Prompt Tutor| G\[✨ API Google Gemini]
+# &#x20;   B <-->|4. Contexto + Prompt Tutor| G\[API Google Gemini]
 
 # 
 
