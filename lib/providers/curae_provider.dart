@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/app_language.dart';
 import '../models/chat_message.dart';
 import '../models/medical_guide.dart';
+import '../services/api_service.dart';
+import '../services/sqlite_service.dart';
 
 class CuraeProvider extends ChangeNotifier {
   AppLanguage _language = AppLanguage.es;
@@ -10,6 +12,9 @@ class CuraeProvider extends ChangeNotifier {
   MedicalCategory _selectedCategory = MedicalCategory.all;
   String _searchQuery = "";
   List<MedicalGuide> _guides = MedicalGuide.sampleGuides;
+
+  final SqliteService _sqlite = SqliteService.instance;
+  final ApiService _api = ApiService();
 
   FirebaseFirestore? _firestoreInstance;
   FirebaseFirestore? get _firestore {
@@ -37,7 +42,7 @@ class CuraeProvider extends ChangeNotifier {
   ];
 
   CuraeProvider() {
-    _initFirebaseConnection();
+    _initDataPipeline();
   }
 
   AppLanguage get language => _language;
@@ -59,17 +64,36 @@ class CuraeProvider extends ChangeNotifier {
     }).toList();
   }
 
-  void _initFirebaseConnection() async {
+  void _initDataPipeline() async {
+    // 1. Cargar almacenamiento local de SQLite inmediatamente (Respuesta ultra rápida sin conexión)
+    try {
+      final localGuides = await _sqlite.getMedicalGuides();
+      if (localGuides.isNotEmpty) {
+        _guides = localGuides;
+        notifyListeners();
+      } else {
+        await _sqlite.saveMedicalGuides(MedicalGuide.sampleGuides);
+      }
+
+      final localMessages = await _sqlite.getMessages();
+      if (localMessages.isNotEmpty) {
+        _messages.clear();
+        _messages.addAll(localMessages);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Info SQLite Local: $e");
+    }
+
+    // 2. Conectar e igualar datos con Firebase Cloud Firestore
     try {
       final db = _firestore;
       if (db == null) return;
 
-      // 1. Cargar e inicializar base de datos de Guías Médicas en Cloud Firestore
       final guidesRef = db.collection('medical_guides');
       final snapshot = await guidesRef.get();
 
       if (snapshot.docs.isEmpty) {
-        // Inicializar/Poblar base de datos en Firebase si la colección está vacía
         for (final guide in MedicalGuide.sampleGuides) {
           await guidesRef.doc(guide.id).set(guide.toMap());
         }
@@ -77,21 +101,23 @@ class CuraeProvider extends ChangeNotifier {
         _guides = snapshot.docs
             .map((doc) => MedicalGuide.fromMap(doc.data(), doc.id))
             .toList();
+        await _sqlite.saveMedicalGuides(_guides);
         notifyListeners();
       }
 
-      // 2. Escuchar cambios en tiempo real del chat en Firestore
       db.collection('messages').orderBy('timestamp', descending: false).snapshots().listen((chatSnapshot) {
         if (chatSnapshot.docs.isNotEmpty) {
           _messages.clear();
           for (final doc in chatSnapshot.docs) {
-            _messages.add(ChatMessage.fromMap(doc.data(), doc.id));
+            final msg = ChatMessage.fromMap(doc.data(), doc.id);
+            _messages.add(msg);
+            _sqlite.saveMessage(msg);
           }
           notifyListeners();
         }
       });
     } catch (e) {
-      debugPrint("Info: Usando almacenamiento local/fallback sin conexión Firebase: $e");
+      debugPrint("Info Firebase Firestore Sync: $e");
     }
   }
 
@@ -124,26 +150,32 @@ class CuraeProvider extends ChangeNotifier {
     _isTutorTyping = true;
     notifyListeners();
 
-    // Guardar mensaje del usuario en Firestore si está disponible
+    // Guardar mensaje de usuario localmente en SQLite y Firebase
+    await _sqlite.saveMessage(userMsg);
     try {
       await _firestore?.collection('messages').doc(userMsg.id).set(userMsg.toMap());
     } catch (_) {}
 
-    // Simulación de interacción con el backend Python o servicio de Firebase AI
-    await Future.delayed(const Duration(milliseconds: 1500));
-
     final isEs = _language == AppLanguage.es;
-    final responseText = isEs
-        ? "Gracias por consultar. Como tu tutor de salud, te oriento sobre '$trimmed':\n\n"
-            "1. Descansa en un lugar tranquilo y mantente bien hidratado.\n"
-            "2. No te automediques con medicamentos fuertes sin indicación previa.\n"
-            "3. Observa la evolución de tus síntomas en las próximas horas.\n\n"
-            "⚠️ Consulta a un médico o centro de salud si el malestar persiste más de 48 horas, o si presentas dolor intenso o fiebre alta."
-        : "Thank you for asking. As your health tutor, here is guidance on '$trimmed':\n\n"
-            "1. Rest in a comfortable place and stay properly hydrated.\n"
-            "2. Avoid self-medicating with strong medications without medical guidance.\n"
-            "3. Observe how your symptoms evolve over the next hours.\n\n"
-            "⚠️ Consult a healthcare provider if symptoms persist more than 48 hours or if you develop severe pain or high fever.";
+    final langCode = isEs ? 'es' : 'en';
+
+    // Intento 1: Consultar al Servidor Local en Python (FastAPI/Flask)
+    String? responseText = await _api.consultarServidorPython(trimmed, langCode);
+
+    // Intento 2: Fallback local si el servidor Python no está activo
+    if (responseText == null) {
+      responseText = isEs
+          ? "Gracias por consultar. Como tu tutor de salud, te oriento sobre '$trimmed':\n\n"
+              "1. Descansa en un lugar tranquilo y mantente bien hidratado.\n"
+              "2. No te automediques con medicamentos fuertes sin indicación previa.\n"
+              "3. Observa la evolución de tus síntomas en las próximas horas.\n\n"
+              "⚠️ Consulta a un médico o centro de salud si el malestar persiste más de 48 horas, o si presentas dolor intenso o fiebre alta."
+          : "Thank you for asking. As your health tutor, here is guidance on '$trimmed':\n\n"
+              "1. Rest in a comfortable place and stay properly hydrated.\n"
+              "2. Avoid self-medicating with strong medications without medical guidance.\n"
+              "3. Observe how your symptoms evolve over the next hours.\n\n"
+              "⚠️ Consult a healthcare provider if symptoms persist more than 48 hours or if you develop severe pain or high fever.";
+    }
 
     final tutorMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -160,7 +192,8 @@ class CuraeProvider extends ChangeNotifier {
     _isTutorTyping = false;
     notifyListeners();
 
-    // Guardar respuesta del Tutor en Firestore si está disponible
+    // Guardar respuesta del Tutor localmente en SQLite y en Firebase
+    await _sqlite.saveMessage(tutorMsg);
     try {
       await _firestore?.collection('messages').doc(tutorMsg.id).set(tutorMsg.toMap());
     } catch (_) {}
